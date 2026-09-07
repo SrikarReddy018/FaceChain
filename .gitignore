@@ -1,0 +1,5 @@
+venv/
+.env
+uploads/
+__pycache__/
+query.jpg

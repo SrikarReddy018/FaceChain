@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<meta charset="utf-8">
+
+<title>FaceChain</title>
+
+<style>
+
+:root {
+  --bg:#0d0d0f;
+  --card:#16161a;
+  --accent:#7c5cff;
+  --ok:#3ddc84;
+  --err:#ff5566;
+  --text:#e8e8ea;
+  --dim:#8a8a93;
+}
+
+* {
+  box-sizing:border-box;
+  margin:0;
+}
+
+body {
+  background:var(--bg);
+  color:var(--text);
+  font-family:system-ui,sans-serif;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.card {
+  background:var(--card);
+  border:1px solid #26262c;
+  border-radius:16px;
+  padding:48px;
+  width:540px;
+  text-align:center;
+}
+
+h1 {
+  font-size:1.5rem;
+  margin-bottom:4px;
+  letter-spacing:.5px;
+}
+
+p.sub {
+  color:var(--dim);
+  font-size:.9rem;
+  margin-bottom:28px;
+}
+
+.drop {
+  border:2px dashed #33333c;
+  border-radius:12px;
+  padding:48px 20px;
+  cursor:pointer;
+  transition:border-color .2s, background .2s;
+}
+
+.drop:hover,
+.drop.over {
+  border-color:var(--accent);
+  background:#1a1a22;
+}
+
+.drop.hide {
+  display:none;
+}
+
+.drop .icon {
+  font-size:2rem;
+  margin-bottom:8px;
+}
+
+.drop span {
+  color:var(--dim);
+}
+
+#preview {
+  max-width:100%;
+  max-height:240px;
+  border-radius:10px;
+  margin-bottom:20px;
+  display:none;
+}
+
+.stage {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  text-align:left;
+  background:#1c1c22;
+  border-radius:8px;
+  padding:12px 16px;
+  margin-bottom:8px;
+  opacity:0;
+  transform:translateY(6px);
+  transition:.3s;
+}
+
+.stage.show {
+  opacity:1;
+  transform:none;
+}
+
+.dot {
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:#44444e;
+  flex-shrink:0;
+}
+
+.dot.run {
+  background:var(--accent);
+  animation:pulse 1s infinite;
+}
+
+.dot.ok {
+  background:var(--ok);
+  animation:none;
+}
+
+.dot.err {
+  background:var(--err);
+  animation:none;
+}
+
+@keyframes pulse {
+  50% {
+    opacity:.4;
+  }
+}
+
+.detail {
+  margin-left:auto;
+  color:var(--dim);
+  font-size:.75rem;
+  max-width:180px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.result {
+  margin-top:16px;
+  text-align:left;
+  font-size:.8rem;
+  word-break:break-all;
+  display:none;
+}
+
+.result a {
+  color:var(--accent);
+}
+
+button.again {
+  margin-top:16px;
+  background:none;
+  border:1px solid #33333c;
+  color:var(--dim);
+  padding:8px 20px;
+  border-radius:8px;
+  cursor:pointer;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+<div class="card">
+
+  <h1>FaceChain</h1>
+
+  <p class="sub">
+    Face &rarr; reverse-image match &rarr; on-chain record
+  </p>
+
+  <div
+    class="drop"
+    id="drop"
+  >
+
+    <div class="icon">
+      &#8679;
+    </div>
+
+    <span>
+      Drop an image or click to upload
+    </span>
+
+  </div>
+
+  <input
+    type="file"
+    id="file"
+    accept="image/*"
+    hidden
+  >
+
+  <img
+    id="preview"
+  >
+
+  <div id="stages"></div>
+
+  <div
+    class="result"
+    id="result"
+  ></div>
+
+  <button
+    class="again"
+    id="again"
+    style="display:none"
+  >
+    Run another
+  </button>
+
+</div>
+
+
+<script>
+
+const drop =
+  document.getElementById("drop");
+
+const file =
+  document.getElementById("file");
+
+const preview =
+  document.getElementById("preview");
+
+const stagesEl =
+  document.getElementById("stages");
+
+const result =
+  document.getElementById("result");
+
+const again =
+  document.getElementById("again");
+
+
+drop.onclick = () => file.click();
+
+
+drop.ondragover = e => {
+
+  e.preventDefault();
+
+  drop.classList.add("over");
+
+};
+
+
+drop.ondragleave = () => {
+
+  drop.classList.remove("over");
+
+};
+
+
+drop.ondrop = e => {
+
+  e.preventDefault();
+
+  drop.classList.remove("over");
+
+  if (e.dataTransfer.files[0]) {
+
+    start(
+      e.dataTransfer.files[0]
+    );
+
+  }
+
+};
+
+
+file.onchange = () => {
+
+  if (file.files[0]) {
+
+    start(
+      file.files[0]
+    );
+
+  }
+
+};
+
+
+again.onclick = () => {
+
+  location.reload();
+
+};
+
+
+const STAGE_NAMES = [
+  "Detecting & encoding face",
+  "Running reverse-image search",
+  "Writing record to blockchain",
+  "Verifying on-chain record"
+];
+
+
+async function start(f) {
+
+  preview.src =
+    URL.createObjectURL(f);
+
+  preview.style.display =
+    "inline-block";
+
+  drop.classList.add("hide");
+
+
+  const rows =
+    STAGE_NAMES.map(name => {
+
+      const row =
+        document.createElement("div");
+
+      row.className =
+        "stage";
+
+      row.innerHTML =
+        `<div class="dot"></div>` +
+        `${name}` +
+        `<div class="detail"></div>`;
+
+      stagesEl.appendChild(row);
+
+      requestAnimationFrame(() => {
+
+        row.classList.add("show");
+
+      });
+
+      return row;
+
+    });
+
+
+  const fd =
+    new FormData();
+
+  fd.append(
+    "image",
+    f
+  );
+
+
+  const {job_id} =
+    await (
+      await fetch(
+        "/upload",
+        {
+          method:"POST",
+          body:fd
+        }
+      )
+    ).json();
+
+
+  while (true) {
+
+    await new Promise(
+      r => setTimeout(r, 800)
+    );
+
+
+    const st =
+      await (
+        await fetch(
+          `/status/${job_id}`
+        )
+      ).json();
+
+
+    /*
+       Map stages by their NAME.
+       This prevents the repeated "run"
+       and "ok" updates from shifting
+       into the wrong row.
+    */
+
+    st.stages.forEach(s => {
+
+      const stageIndex = {
+        face:0,
+        search:1,
+        chain:2,
+        verify:3
+      };
+
+
+      if (s.name === "error") {
+
+        result.style.display =
+          "block";
+
+        result.innerHTML =
+          `<b style="color:var(--err)">` +
+          `Error:</b> ` +
+          `${s.detail}`;
+
+        return;
+
+      }
+
+
+      const index =
+        stageIndex[s.name];
+
+
+      if (index === undefined) {
+        return;
+      }
+
+
+      const row =
+        rows[index];
+
+
+      const dot =
+        row.querySelector(".dot");
+
+      const det =
+        row.querySelector(".detail");
+
+
+      if (s.status === "run") {
+
+        dot.className =
+          "dot run";
+
+      }
+
+      else if (s.status === "fail") {
+
+        dot.className =
+          "dot err";
+
+      }
+
+      else {
+
+        dot.className =
+          "dot ok";
+
+      }
+
+
+      det.textContent =
+        s.detail || "";
+
+    });
+
+
+    if (st.done) {
+
+      if (st.result) {
+
+        result.style.display =
+          "block";
+
+
+        let postsHtml = "";
+
+
+        if (
+          st.result.posts &&
+          st.result.posts.length > 0
+        ) {
+
+          postsHtml =
+            `<br><br>` +
+            `<b>Instagram posts found:</b>` +
+            `<div style="margin-top:10px;">`;
+
+
+          postsHtml +=
+            st.result.posts
+              .map((post, index) => {
+
+                return `
+                  <div style="margin:8px 0;">
+
+                    <a
+                      href="${post.url}"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Post ${index + 1}:
+                      ${post.title || post.url}
+                    </a>
+
+                  </div>
+                `;
+
+              })
+              .join("");
+
+
+          postsHtml +=
+            `</div>`;
+
+        }
+
+
+        result.innerHTML =
+
+          `<b>Match:</b> ` +
+
+          `<a
+            href="${st.result.url}"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            ${st.result.url}
+          </a><br><br>` +
+
+          `<b>Blockchain transaction:</b> ` +
+
+          `<a
+            href="https://sepolia.etherscan.io/tx/${st.result.tx}"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            ${st.result.tx}
+          </a><br><br>` +
+
+          `<b>Record hash:</b> ` +
+
+          `${st.result.hash}` +
+
+          postsHtml;
+
+      }
+
+      else {
+
+        result.style.display =
+          "block";
+
+        result.innerHTML =
+          `<b style="color:var(--err)">` +
+          `Pipeline failed — ` +
+          `see red stage above.</b>`;
+
+      }
+
+
+      again.style.display =
+        "inline-block";
+
+      break;
+
+    }
+
+  }
+
+}
+
+</script>
+
+</body>
+
+</html>
